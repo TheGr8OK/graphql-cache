@@ -54,8 +54,8 @@ module GraphQL
         document = Deconstructor[resolved].perform
 
         with_resolved_document(document) do |resolved_document|
-          cache.write(key, resolved_document, expires_in: expiry(config))
-
+          # Try to cache the document, with fallback for non-serializable objects
+          cache_document(resolved_document, config)
           resolved
         end
       end
@@ -72,6 +72,70 @@ module GraphQL
       # @private
       def document_is_lazy?(document)
         ['GraphQL::Execution::Lazy', 'Promise'].include?(document.class.name)
+      end
+
+      # @private
+      def cache_document(document, config)
+        cache.write(key, document, expires_in: expiry(config))
+      rescue TypeError => e
+        # Handle serialization errors by attempting to clean the document
+        if e.message.include?('_dump_data') || e.message.include?('Proc')
+          cleaned_document = clean_for_serialization(document)
+          begin
+            cache.write(key, cleaned_document, expires_in: expiry(config))
+            logger.debug "Cache write successful after cleaning: (#{key})"
+          rescue TypeError => clean_error
+            logger.debug "Cache skip: (#{key}) - failed to serialize even after cleaning: #{clean_error.message}"
+          end
+        else
+          logger.debug "Cache skip: (#{key}) - serialization error: #{e.message}"
+        end
+      end
+
+      # @private  
+      def clean_for_serialization(obj)
+        case obj
+        when Array
+          obj.map { |item| clean_for_serialization(item) }
+        when Hash
+          obj.each_with_object({}) do |(k, v), cleaned|
+            cleaned[k] = clean_for_serialization(v)
+          end
+        when Proc, Method, UnboundMethod
+          # Replace non-serializable callables with nil or a placeholder
+          nil
+        else
+          # For ActiveRecord objects and other complex objects, try to convert to basic types
+          if obj.respond_to?(:attributes) && obj.respond_to?(:id)
+            # ActiveRecord-like object - extract serializable attributes
+            clean_active_record_object(obj)
+          elsif obj.respond_to?(:to_h)
+            clean_for_serialization(obj.to_h)
+          elsif obj.respond_to?(:to_a)
+            clean_for_serialization(obj.to_a)
+          else
+            # Return the object as-is and let Marshal handle it
+            obj
+          end
+        end
+      end
+
+      # @private
+      def clean_active_record_object(obj)
+        # For ActiveRecord objects, extract the core attributes but avoid associations that might contain procs
+        base_attrs = {}
+        
+        if obj.respond_to?(:attributes)
+          obj.attributes.each do |key, value|
+            base_attrs[key] = clean_for_serialization(value)
+          end
+        end
+        
+        # Add the ID if present
+        base_attrs['id'] = obj.id if obj.respond_to?(:id)
+        base_attrs['class'] = obj.class.name if obj.respond_to?(:class)
+        
+        base_attrs
       end
 
       # @private

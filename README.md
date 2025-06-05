@@ -5,17 +5,39 @@
 # GraphQL Cache
 [![Gem Version](https://badge.fury.io/rb/graphql-cache.svg)](https://badge.fury.io/rb/graphql-cache) [![Build Status](https://travis-ci.org/stackshareio/graphql-cache.svg?branch=master)](https://travis-ci.org/stackshareio/graphql-cache) [![Test Coverage](https://api.codeclimate.com/v1/badges/524c0f23ed1dbf0f9338/test_coverage)](https://codeclimate.com/github/stackshareio/graphql-cache/test_coverage) [![Maintainability](https://api.codeclimate.com/v1/badges/524c0f23ed1dbf0f9338/maintainability)](https://codeclimate.com/github/stackshareio/graphql-cache/maintainability) [![Stack Share](https://img.shields.io/badge/tech-stack-0690fa.svg?style=flat)](https://stackshare.io/stackshare/graphql-cache)
 
-A custom caching plugin for [graphql-ruby](https://github.com/rmosolgo/graphql-ruby)
+A modern, compatible caching plugin for [graphql-ruby](https://github.com/rmosolgo/graphql-ruby) supporting both GraphQL 1.x and 2.x
+
+## 🚀 Version 1.0.0 - Modernized for GraphQL-Ruby 2.x
+
+This version has been completely modernized to support the latest GraphQL-Ruby versions while maintaining backward compatibility with 1.x applications.
+
+### ✅ What's New
+- **GraphQL-Ruby 2.x Support**: Uses new field extensions instead of deprecated field instrumentation
+- **Backward Compatible**: Seamlessly works with GraphQL-Ruby 1.8+ through 2.5+
+- **Smart Object Cleaning**: Automatically handles non-serializable objects (Procs, Methods) in cached data
+- **Improved Connection Handling**: Supports both GraphQL 1.x and 2.x connection types
+- **Enhanced Error Handling**: Graceful fallbacks for serialization issues
+
+### 📋 Version Compatibility
+
+| GraphQL-Ruby Version | graphql-cache Version | Status |
+|---------------------|----------------------|--------|
+| 2.0.0 - 2.5.x      | 1.0.0+              | ✅ Fully Supported (Extensions) |
+| 1.12.0 - 1.13.x    | 1.0.0+              | ✅ Fully Supported (Instrumentation) |
+| 1.8.0 - 1.11.x     | 1.0.0+              | ✅ Fully Supported (Instrumentation) |
+| < 1.8.0             | 0.6.1               | ⚠️ Legacy Support Only |
 
 ## Goals
 
 - Provide resolver-level caching for [GraphQL](https://graphql.org) APIs written in ruby
 - Configurable to work with or without Rails
+- Modern compatibility with GraphQL-Ruby 1.x and 2.x
+- Intelligent handling of complex objects and serialization edge cases
 - [API Documentation](https://www.rubydoc.info/gems/graphql-cache)
 
 ## Why?
 
-At [StackShare](https://stackshare.io) we've been rolling out [graphql-ruby](https://github.com/rmosolgo/graphql-ruby) for several of our new features and found ourselves in need of a caching solution.  We could have simply used `Rails.cache` in our resolvers, but this creates very verbose types or resolver classes.  It also means that each and every resolver must define it's own expiration and key.  GraphQL Cache solves that problem by integrating caching functionality into the [graphql-ruby](https://github.com/rmosolgo/graphql-ruby) resolution process making caching transparent on most fields except for a metadata flag denoting the field as cached. More details on our motivation for creating this [here](https://stackshare.io/posts/introducing-graphql-cache).
+At [StackShare](https://stackshare.io) we've been rolling out [graphql-ruby](https://github.com/rmosolgo/graphql-ruby) for several of our new features and found ourselves in need of a caching solution. We could have simply used `Rails.cache` in our resolvers, but this creates very verbose types or resolver classes. It also means that each and every resolver must define its own expiration and key. GraphQL Cache solves that problem by integrating caching functionality into the [graphql-ruby](https://github.com/rmosolgo/graphql-ruby) resolution process making caching transparent on most fields except for a metadata flag denoting the field as cached. More details on our motivation for creating this [here](https://stackshare.io/posts/introducing-graphql-cache).
 
 ## Installation
 
@@ -39,24 +61,33 @@ $ gem install graphql-cache
 
 ## Setup
 
-1. Use GraphQL Cache as a plugin in your schema.
+### For GraphQL-Ruby 2.x (Recommended)
 
-  ```ruby
-  class MySchema < GraphQL::Schema
-    query Types::Query
+1. Use GraphQL Cache as a plugin in your schema:
 
-    use GraphQL::Cache
+```ruby
+class MySchema < GraphQL::Schema
+  query Types::Query
+
+  use GraphQL::Cache
+end
+```
+
+2. Add the custom caching field class to your base object class:
+
+```ruby
+module Types
+  class Base < GraphQL::Schema::Object
+    field_class GraphQL::Cache::Field
   end
-  ```
-2. Add the custom caching field class to your base object class. This adds the `cache` metadata key when defining fields.
-  ```ruby
-  module Types
-    class Base < GraphQL::Schema::Object
-      field_class GraphQL::Cache::Field
-    end
-  end
-  ```
-_Also note that if you want access to the `cache` keyword param in interface fields, the field_class directive must be added to your base interface module as well_
+end
+```
+
+### For GraphQL-Ruby 1.x (Legacy)
+
+The setup is identical to 2.x - the gem automatically detects your GraphQL-Ruby version and uses the appropriate caching mechanism (field extensions for 2.x, field instrumentation for 1.x).
+
+_Note: If you want access to the `cache` keyword param in interface fields, the field_class directive must be added to your base interface module as well._
 
 ## Configuration
 
@@ -79,11 +110,13 @@ Any object, list, or connection field can be cached by simply adding `cache: tru
 
 ```ruby
 field :calculated_field, Int, cache: true
+field :expensive_query, [Types::MyType], cache: true
+field :connection_field, Types::MyType.connection_type, cache: true
 ```
 
 ### Custom Expirations
 
-By default all keys will have an expiration of `GraphQL::Cache.expiry` which defaults to 90 minutes.  If you want to set a field-specific expiration time pass a hash to the `cache` parameter like this:
+By default all keys will have an expiration of `GraphQL::Cache.expiry` which defaults to 90 minutes. If you want to set a field-specific expiration time pass a hash to the `cache` parameter like this:
 
 ```ruby
 field :calculated_field, Int, cache: { expiry: 10800 } # expires key after 180 minutes
@@ -91,7 +124,7 @@ field :calculated_field, Int, cache: { expiry: 10800 } # expires key after 180 m
 
 ### Custom cache keys
 
-GraphQL Cache generates a cache key using the context of a query during execution. A custom key can be included to implement versioned caching as well. By providing a `:key` value to the cache config hash on a field definition.  For example, to use a custom method that returns the cache key for an object use:
+GraphQL Cache generates a cache key using the context of a query during execution. A custom key can be included to implement versioned caching as well. By providing a `:key` value to the cache config hash on a field definition. For example, to use a custom method that returns the cache key for an object use:
 
 ```ruby
 field :calculated_field, Int, cache: { key: :custom_cache_key }
@@ -101,28 +134,215 @@ With this configuration the cache key used for this resolved value will use the 
 
 ### Forcing the cache
 
-It is possible to force graphql-cache to resolve and write all cached fields to cache regardless of the presence of a given key in the cache store.  This will effectively "renew" any existing cached expirations and warm any that don't exist. To use forced caching, add a value to `:force_cache` in the query context:
+It is possible to force graphql-cache to resolve and write all cached fields to cache regardless of the presence of a given key in the cache store. This will effectively "renew" any existing cached expirations and warm any that don't exist. To use forced caching, add a value to `:force_cache` in the query context:
 
 ```ruby
 MySchema.execute('{ company(id: 123) { cachedField }}', context: { force_cache: true })
 ```
 
-This will resolve all cached fields using the field's resolver and write them to cache without first reading the value at their respective cache keys.  This is useful for structured cache warming strategies where the cache expiration needs to be updated when a warming query is made.
+This will resolve all cached fields using the field's resolver and write them to cache without first reading the value at their respective cache keys. This is useful for structured cache warming strategies where the cache expiration needs to be updated when a warming query is made.
 
-## Development
+## 🛡️ Object Serialization & Limitations
+
+GraphQL Cache automatically handles complex object serialization to ensure reliable caching. Here's what you need to know:
+
+### ✅ Supported Objects
+
+**Basic Types:**
+```ruby
+field :string_field, String, cache: true      # ✅ Strings
+field :integer_field, Int, cache: true        # ✅ Integers  
+field :float_field, Float, cache: true        # ✅ Floats
+field :boolean_field, Boolean, cache: true    # ✅ Booleans
+field :array_field, [String], cache: true     # ✅ Arrays
+field :hash_field, GraphQL::Types::JSON, cache: true # ✅ Hashes
+```
+
+**ActiveRecord Objects:**
+```ruby
+field :user, Types::UserType, cache: true              # ✅ Single AR objects
+field :users, [Types::UserType], cache: true           # ✅ AR collections
+field :user_connection, Types::UserType.connection_type, cache: true # ✅ Connections
+```
+
+**GraphQL Objects:**
+```ruby
+field :custom_object, Types::MyCustomType, cache: true # ✅ Custom GraphQL types
+field :interface_field, Types::MyInterface, cache: true # ✅ Interface types
+```
+
+### ⚠️ Automatically Cleaned Objects
+
+The gem automatically cleans these objects to make them cacheable:
+
+**Non-Serializable Callables:**
+```ruby
+# These are automatically replaced with nil during caching
+field :field_with_proc, String, cache: true do
+  # Procs in resolved data are cleaned out
+end
+```
+
+**ActiveRecord with Associations Containing Procs:**
+```ruby
+# The gem extracts core attributes and IDs, removing problematic associations
+field :user_with_complex_data, Types::UserType, cache: true
+```
+
+### ❌ Limitations & Unsupported Objects
+
+**File Objects:**
+```ruby
+field :file_field, String, cache: false # ❌ File objects cannot be marshaled
+# Use cache: false or implement custom serialization
+```
+
+**External API Clients:**
+```ruby
+field :api_client, String, cache: false # ❌ HTTP clients, API connections
+# Cache the result data, not the client object
+```
+
+**Database Connections:**
+```ruby
+field :db_connection, String, cache: false # ❌ Database connection objects
+# Cache query results, not connection objects
+```
+
+### 🔧 Best Practices
+
+**1. Cache Results, Not Clients:**
+```ruby
+# ❌ Don't cache the client
+field :api_data, String, cache: true do
+  external_api_client.fetch_data # Client gets cached (problematic)
+end
+
+# ✅ Cache the result
+field :api_data, String, cache: true do
+  result = external_api_client.fetch_data
+  result.to_json # Only cache serializable data
+end
+```
+
+**2. Use Custom Keys for Complex Objects:**
+```ruby
+field :complex_calculation, Float, cache: { key: :calculation_cache_key }
+
+def calculation_cache_key
+  "calc_#{updated_at.to_i}_#{some_dependent_value}"
+end
+```
+
+**3. Handle Large Objects:**
+```ruby
+# For very large objects, consider caching subsets
+field :large_dataset, [Types::DataType], cache: { expiry: 3600 } do
+  # Cache expires sooner for large datasets
+end
+```
+
+## 🔍 Debugging & Monitoring
+
+### Cache Logging
+
+Enable detailed cache logging in your configuration:
+
+```ruby
+GraphQL::Cache.configure do |config|
+  config.logger = Rails.logger
+  # Set log level to debug to see cache hits/misses
+end
+```
+
+**Log Output Examples:**
+```
+DEBUG -- : Cache miss: (GraphQL::Cache:User:123:calculated_field:abc123)
+DEBUG -- : Cache hit: (GraphQL::Cache:User:123:calculated_field:abc123)  
+DEBUG -- : Cache write successful after cleaning: (GraphQL::Cache:User:123:complex_field:def456)
+DEBUG -- : Cache skip: (GraphQL::Cache:User:123:problematic_field:ghi789) - failed to serialize even after cleaning
+```
+
+### Performance Monitoring
+
+Track cache effectiveness in your application:
+
+```ruby
+# In your GraphQL context
+context = {
+  cache_stats: { hits: 0, misses: 0 }
+}
+
+# The gem will populate these stats during execution
+MySchema.execute(query, context: context)
+puts "Cache hits: #{context[:cache_stats][:hits]}"
+puts "Cache misses: #{context[:cache_stats][:misses]}"
+```
+
+## 🔄 Migration Guide
+
+### From 0.6.x to 1.0.0
+
+No breaking changes! The new version is fully backward compatible:
+
+1. Update your Gemfile:
+```ruby
+gem 'graphql-cache', '~> 1.0'
+```
+
+2. Run bundle update:
+```sh
+bundle update graphql-cache
+```
+
+3. (Optional) For GraphQL-Ruby 2.x users, you can remove field instrumentation warnings by ensuring you're using the latest schema definition format.
+
+### Migrating from graphql-fragment_cache
+
+If you're migrating from the fragment_cache gem:
+
+```ruby
+# Before (fragment_cache)
+field :expensive_field, String do
+  extension GraphQL::FragmentCache::ObjectCacheExtension, cache_key: :cache_key
+end
+
+# After (graphql-cache)  
+field :expensive_field, String, cache: { key: :cache_key }
+```
+
+## 🧪 Development
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
 
+**Testing with Different GraphQL Versions:**
+```sh
+# Test with GraphQL 1.x
+bundle exec appraisal graphql-1-13 rspec
+
+# Test with GraphQL 2.x  
+bundle exec appraisal graphql-2-0 rspec
+```
+
 To install this gem onto your local machine, run `bundle exec rake install`.
 
-## Contributing
+## 🤝 Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/stackshareio/graphql-cache. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [Contributor Covenant](http://contributor-covenant.org) code of conduct.
 
-## License
+### Reporting Issues
+
+When reporting serialization or caching issues, please include:
+
+1. GraphQL-Ruby version
+2. Example field definition  
+3. Sample object structure that's failing to cache
+4. Complete error logs with debug logging enabled
+
+## 📄 License
 
 The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
 
-## Code of Conduct
+## 📞 Code of Conduct
 
-Everyone interacting in the graphql-cache project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/stackshareio/graphql-cache/blob/master/CODE_OF_CONDUCT.md)..
+Everyone interacting in the graphql-cache project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/stackshareio/graphql-cache/blob/master/CODE_OF_CONDUCT.md).
