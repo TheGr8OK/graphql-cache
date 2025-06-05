@@ -49,10 +49,37 @@ module GraphQL
           raw.then { |resolved_raw| self.class[resolved_raw].perform }
         elsif %(array collectionproxy).include? method
           deconstruct_array(raw)
-        elsif raw.class.ancestors.include? GraphQL::Relay::BaseConnection
-          raw.nodes
+        elsif connection_object?(raw)
+          extract_nodes_from_connection(raw)
         else
           deconstruct_object(raw)
+        end
+      end
+
+      private
+
+      # Check if the object is a connection (GraphQL 1.x or 2.x)
+      def connection_object?(obj)
+        # Check for GraphQL 2.x connection classes
+        return true if defined?(GraphQL::Pagination::Connection) && obj.is_a?(GraphQL::Pagination::Connection)
+        
+        # Check for GraphQL 1.x connection classes (backward compatibility)
+        if defined?(GraphQL::Relay::BaseConnection)
+          return true if obj.class.ancestors.include?(GraphQL::Relay::BaseConnection)
+        end
+        
+        false
+      end
+
+      # Extract nodes from connection object (GraphQL 1.x or 2.x)
+      def extract_nodes_from_connection(connection)
+        if connection.respond_to?(:nodes)
+          connection.nodes
+        elsif connection.respond_to?(:edge_nodes)
+          connection.edge_nodes
+        else
+          # Fallback: try to extract items from the connection
+          connection
         end
       end
 

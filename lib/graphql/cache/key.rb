@@ -28,12 +28,13 @@ module GraphQL
       # @param type [GraphQL::Schema::Type] The type definition of the parent object
       # @param field [GraphQL::Schema::Field] The field being resolved
       def initialize(obj, args, type, field, context = {})
-        @object    = obj.object
+        # In GraphQL 2.x, obj might be the object directly, not wrapped
+        @object    = obj.respond_to?(:object) ? obj.object : obj
         @arguments = args
         @type      = type
         @field     = field
         @context   = context
-        @metadata  = field.metadata[:cache]
+        @metadata  = get_cache_metadata(field)
 
         @metadata = { cache: @metadata } unless @metadata.is_a?(Hash)
       end
@@ -99,6 +100,28 @@ module GraphQL
         return object.id if object.respond_to?(:id)
 
         object.object_id
+      end
+
+      private
+
+      # @private
+      def get_cache_metadata(field)
+        # Try to get from instance variable first (GraphQL 2.x with extension)
+        if field.instance_variable_defined?(:@cache_config)
+          return field.instance_variable_get(:@cache_config)
+        end
+        
+        # Try to get from extension options (GraphQL 2.x)
+        if field.respond_to?(:extensions) && field.extensions.any? { |ext| ext.is_a?(GraphQL::Cache::Extension) }
+          extension = field.extensions.find { |ext| ext.is_a?(GraphQL::Cache::Extension) }
+          return extension.options[:cache] if extension
+        end
+        
+        # Fallback to metadata for backward compatibility (GraphQL 1.x)
+        return field.metadata[:cache] if field.respond_to?(:metadata)
+        
+        # Default fallback
+        false
       end
     end
   end

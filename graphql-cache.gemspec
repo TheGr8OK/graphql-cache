@@ -19,7 +19,7 @@ Gem::Specification.new do |s|
     f.match(%r{^(test|spec|features)/})
   end
   s.require_paths = ['lib']
-  s.required_ruby_version = '>= 2.2.0' # bc graphql-ruby requires >= 2.2.0
+  s.required_ruby_version = '>= 2.7.0' # Updated for modern Ruby support
 
   s.add_development_dependency 'appraisal'
   s.add_development_dependency 'codeclimate-test-reporter'
@@ -29,7 +29,7 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'rspec',   '~> 3.0'
   s.add_development_dependency 'sequel'
   s.add_development_dependency 'simplecov'
-  s.add_development_dependency 'sqlite3'
+  s.add_development_dependency 'sqlite3', '>= 1.4'
 
-  s.add_dependency 'graphql', '~> 1', '> 1.8'
+  s.add_dependency 'graphql', '>= 1.8', '< 3.0' # Support both 1.x and 2.x
 end

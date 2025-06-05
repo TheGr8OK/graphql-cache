@@ -2,6 +2,7 @@
 
 require 'graphql/cache/version'
 require 'graphql/cache/field'
+require 'graphql/cache/extension'
 require 'graphql/cache/key'
 require 'graphql/cache/marshal'
 require 'graphql/cache/fetcher'
@@ -45,8 +46,15 @@ module GraphQL
     # bootstrap necessary instrumentation and tracing
     # tie-ins
     def self.use(schema_def, options: {})
-      fetcher = ::GraphQL::Cache::Fetcher.new
-      schema_def.instrument(:field, fetcher)
+      # For GraphQL 2.x, we don't use field instrumentation
+      # Instead, users should use GraphQL::Cache::Field as their field class
+      # or manually add the GraphQL::Cache::Extension to fields
+      
+      # For backward compatibility with GraphQL 1.x, we still support field instrumentation
+      if schema_def.respond_to?(:instrument)
+        fetcher = ::GraphQL::Cache::Fetcher.new
+        schema_def.instrument(:field, fetcher)
+      end
     end
   end
 end
